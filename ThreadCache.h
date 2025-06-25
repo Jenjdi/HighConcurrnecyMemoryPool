@@ -1,5 +1,6 @@
 #pragma once
 #include"Common.h"
+#include"CentralCache.h"
 class ThreadCache
 {
 private:
@@ -13,3 +14,4 @@ public:
     void* FetchFromCentralCache(size_t index, size_t size);
 
 };
+static _declspec(thread) ThreadCache* pTLSThreadCache = nullptr;

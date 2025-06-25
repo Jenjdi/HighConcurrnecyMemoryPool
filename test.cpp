@@ -48,6 +48,10 @@ void TestObjectPool()
     cout << "new cost time:" << end1 - begin1 << endl;
     cout << "object pool cost time:" << end2 - begin2 << endl;
 }
+void TestThread()
+{
+
+}
 int main()
 {
     TestObjectPool();

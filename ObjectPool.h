@@ -46,16 +46,19 @@ public:
                 obj = (T*)_memory;
                 // 如果实际对象的大小小于最小能分配的大小，则最少分配sizeof(void*)个字节
                 size_t objSize = sizeof(T) < sizeof(void*) ? sizeof(void*) : sizeof(T);
+                //使用过程中是正常使用的，只有回收时才会将头4个字节保存下一个结点的地址
                 _memory += objSize;
                 _RemainByte -= objSize;
             }
         }
-        obj = new T();
+        new (obj) T();
+        //定位new(placement new)，在指定的一块原始内存上调用构造函数来构造对象，而不是而不是像普通 new 那样先分配内存再构造对象
         return obj;
     }
     void Delete(T* obj)
     {
         obj->~T();
+        //显式调用析构函数清理对象，没有将空间释放掉
         *(void**)(obj) = _freeList; // 将对象头插入链表
         // 使用二级指针是因为一级指针一旦解引用就会变成变量类型，由于指针的大小在64和32位下不同，因此需要不同的值来进行设置
         // 所以使用二级指针作为前4/8个字节的地址指向下一个被释放空间的地址

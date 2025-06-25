@@ -1,24 +1,43 @@
 #pragma once
 #include<iostream>
 #include<vector>
+#include<mutex>
+#include<thread>
+#include<algorithm>
 #include<ctime>
 #include<cassert>
-const static int MAX_BYTES = 256 * 1024;//thread_cache最大256KB
-const static int NFREELIST = 208;
-void*& NodeNext(void* obj)
+
+const static size_t MAX_BYTES = 256 * 1024;//thread_cache最大256KB
+const static size_t NFREELIST = 208;
+static const size_t NPAGES = 129;
+#ifdef _WIN64
+typedef unsigned long long PAGE_ID;
+#elif _WIN32
+typedef size_t PAGE_ID;
+#else
+//Linux
+
+#endif
+inline void*& NodeNext(void* obj)
 {
     return *(void**)obj;
 }
 class FreeList
 {
 private:
-    void* _freeList;
+    void* _freeList = nullptr;
+    size_t _MaxSize = 1;
 
 public:
     void Push(void* obj)
     {
         NodeNext(obj) = _freeList;
         _freeList = obj;
+    }
+    void PushRange(void* begin, void* end)
+    {
+        NodeNext(end) = _freeList;
+        _freeList = begin;
     }
     void* Pop()
     {
@@ -30,6 +49,11 @@ public:
     {
         return _freeList == nullptr;
     }
+    size_t& MaxSize()
+    {
+        return _MaxSize;
+    }
+
 };
 //管理内存对其和映射
 
@@ -128,5 +152,72 @@ public:
             assert(false);
         }
         return -1;
+    }
+    //ThreadCache一次从CentralCache中取出多少个
+    static size_t NumMoveSize(size_t size)
+    {
+        assert(size > 0);
+        size_t Num = MAX_BYTES / size;//一次取出对象的数量
+        //不能太大也不能太小
+        if (Num < 2)
+        {
+            Num = 2;
+        }
+        if (Num > 512)
+        {
+            Num = 512;
+        }
+        return Num;
+    }
+};
+
+    //管理多个连续页大块内存的跨度
+struct Span
+{
+    PAGE_ID _page;//大块内存的起始页号
+    size_t _n;//页的数量
+    Span* _prev;
+    Span* _next;
+    
+    size_t _useCount=0;//切好的小块内存，被分配给thread cache的计数，当全部收回时就为0，同时默认也是0
+    void* _freeList;//切好的小块内存的自由链表
+
+    size_t _maxSize = 1;
+};
+class SpanList//带头双向链表
+{
+private:
+    Span* _head = nullptr;
+    std::mutex _mutex;//桶锁
+
+public:
+    SpanList()
+    {
+        _head = new Span;
+        _head->_next = _head;
+        _head->_prev = _head;
+    }
+    std::mutex& GetMutex()
+    {
+        return _mutex;
+    }
+    void Insert(Span* pos, Span* newspan)
+    {
+        assert(pos);
+        assert(newspan);
+        Span* prev = pos->_prev;
+        prev->_next = newspan;
+        newspan->_prev = prev;
+        pos->_prev=newspan;
+        newspan->_next = pos;
+    }
+    void Erase(Span* pos)
+    {
+        assert(pos);
+        assert(pos != _head);
+        Span* prev = pos->_prev;
+        Span* next = pos->_next;
+        prev->_next = next;
+        next->_prev = prev;
     }
 };
