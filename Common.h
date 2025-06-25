@@ -9,7 +9,7 @@
 
 static const size_t MAX_BYTES = 256 * 1024; // thread_cache最大256KB
 static const size_t NFREELIST = 208;
-static const size_t NPAGES = 128;
+static const size_t NPAGES = 129;//实际上使用到的就是128个，为了让下标和页数一一对应，将0下标空出来
 static const size_t PAGE_SHIFT = 13;//页大小为2^13
 #ifdef _WIN64
 typedef unsigned long long PAGE_ID;
@@ -19,6 +19,30 @@ typedef size_t PAGE_ID;
 //Linux
 
 #endif
+
+#ifdef _WIN32
+#include <Windows.h>
+#else
+#include <sys/mman.h>
+#endif
+
+inline static void* SystemAlloc(size_t kpage)
+{
+#ifdef _WIN32
+
+    void* ptr = VirtualAlloc(0, kpage * (1 << 12), MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE);
+#else
+    // linux下brk mmap等
+    void* ptr = mmap(nullptr, kpage, PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+#endif
+    if (ptr == nullptr)
+        throw std::bad_alloc();
+    return ptr;
+}
+
 inline void*& NodeNext(void* obj)
 {
     return *(void**)obj;
@@ -193,13 +217,13 @@ public:
 struct Span
 {
     //内存大小 = _n * 页大小
-    PAGE_ID _pageid;//大块内存的起始页号
-    size_t _n;//页的数量
-    Span* _prev;
-    Span* _next;
+    PAGE_ID _pageid=0;//大块内存的起始页号
+    size_t _n=0;//页的数量
+    Span* _prev=nullptr;
+    Span* _next=nullptr;
     
     size_t _useCount=0;//切好的小块内存，被分配给thread cache的计数，当全部收回时就为0，同时默认也是0
-    void* _freeList;//切好的小块内存的自由链表
+    void* _freeList=nullptr;//切好的小块内存的自由链表
 
     size_t _maxSize = 1;
 };
@@ -241,6 +265,16 @@ public:
         newspan->_prev = prev;
         pos->_prev=newspan;
         newspan->_next = pos;
+    }
+    Span* PopFront()
+    {
+        Span* front = _head->_next;
+        Erase(front);//只是将front取出来了，并没有将内存释放
+        return front;
+    }
+    bool Empty()
+    {
+        return _head == _head->_next;
     }
     void Erase(Span* pos)
     {

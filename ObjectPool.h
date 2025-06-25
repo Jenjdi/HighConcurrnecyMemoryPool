@@ -1,29 +1,8 @@
 #pragma once
 #include <exception>
 #include <iostream>
+#include"Common.h"
 
-#ifdef _WIN32
-#include <Windows.h>
-#else
-#include <sys/mman.h>
-#endif
-
-inline static void* SystemAlloc(size_t kpage)
-{
-#ifdef _WIN32
-
-    void* ptr = VirtualAlloc(0, kpage * (1 << 12), MEM_COMMIT | MEM_RESERVE,
-        PAGE_READWRITE);
-#else
-    // linuxÏÂbrk mmapµÈ
-    void* ptr = mmap(nullptr, kpage, PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-
-#endif
-    if (ptr == nullptr)
-        throw std::bad_alloc();
-    return ptr;
-}
 template <class T>
 class ObjectPool {
 public:

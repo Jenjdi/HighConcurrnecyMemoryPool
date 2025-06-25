@@ -15,5 +15,9 @@ public:
     {
         return &_sInst;
     }
+    std::mutex& GetPageMutex()
+    {
+        return _mutex;
+    }
     Span* NewSpan(size_t size);
 };

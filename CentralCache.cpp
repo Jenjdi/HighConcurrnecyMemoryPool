@@ -12,8 +12,14 @@ Span* CentralCache::GetOneSpan(SpanList& list, size_t byte_size)
         }
         it = it->_next;
     }
+    //先将centralcache的桶锁释放掉，这样其他线程将内存释放回来的时候不会阻塞
+    list.GetMutex().unlock();
     //没找到一个非空Span，接下来向pagecache申请
+    PageCache::GetInstance()->GetPageMutex().lock();//因为是获取pagecache的span，因此要对pagecache加锁
     Span* span=PageCache::GetInstance()->NewSpan(SizeClass::NumMovePage(byte_size));
+    PageCache::GetInstance()->GetPageMutex().lock();
+
+    //下面这里不需要加锁，因为span暂时只有当前线程能够访问到，并没有放入到链表中，因此其他线程访问不到
     char* page_start = (char*)(span->_pageid << PAGE_SHIFT);//根据页号获取页的起始地址
     size_t bytes = span->_n << PAGE_SHIFT;//计算span的内存大小所占的字节数，左移相当于乘2^13
     char* end = page_start + bytes;
@@ -28,6 +34,8 @@ Span* CentralCache::GetOneSpan(SpanList& list, size_t byte_size)
         page_start += byte_size;
     }
     //将这个span头插入list中
+    //将span插入到list中后其他线程就能访问到了，因此需要将锁重新加上
+    list.GetMutex().lock();
     list.PushFront(span);
 
     return span;
