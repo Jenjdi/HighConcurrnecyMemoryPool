@@ -7,9 +7,10 @@
 #include<ctime>
 #include<cassert>
 
-const static size_t MAX_BYTES = 256 * 1024;//thread_cache最大256KB
-const static size_t NFREELIST = 208;
-static const size_t NPAGES = 129;
+static const size_t MAX_BYTES = 256 * 1024; // thread_cache最大256KB
+static const size_t NFREELIST = 208;
+static const size_t NPAGES = 128;
+static const size_t PAGE_SHIFT = 13;//页大小为2^13
 #ifdef _WIN64
 typedef unsigned long long PAGE_ID;
 #elif _WIN32
@@ -156,6 +157,9 @@ public:
     //ThreadCache一次从CentralCache中取出多少个
     static size_t NumMoveSize(size_t size)
     {
+        // [2, 512]，一次批量移动多少个对象的(慢启动)上限值
+        // 小对象一次批量上限高
+        // 小对象一次批量上限低
         assert(size > 0);
         size_t Num = MAX_BYTES / size;//一次取出对象的数量
         //不能太大也不能太小
@@ -169,12 +173,27 @@ public:
         }
         return Num;
     }
+
+    static size_t NumMovePage(size_t size)
+    {
+        // 计算一次向系统获取几个页
+        // 单个对象 8byte
+        // ...
+        // 单个对象 256KB
+        size_t num = NumMoveSize(size);
+        size_t npage = num * size;//num个对象，一个对象size个字节，算出总的字节数
+        npage >>= PAGE_SHIFT;//一个页大小为2^PAGE_SHIFT字节，通过右移能更高效的算出具体所需要的页数
+        if (npage == 0)
+            npage = 1;
+        return npage;
+    }
 };
 
     //管理多个连续页大块内存的跨度
 struct Span
 {
-    PAGE_ID _page;//大块内存的起始页号
+    //内存大小 = _n * 页大小
+    PAGE_ID _pageid;//大块内存的起始页号
     size_t _n;//页的数量
     Span* _prev;
     Span* _next;
@@ -200,6 +219,18 @@ public:
     std::mutex& GetMutex()
     {
         return _mutex;
+    }
+    Span* Begin()
+    {
+        return _head->_next;
+    }
+    Span* End()
+    {
+        return _head;
+    }
+    void PushFront(Span* span)
+    {
+        Insert(Begin(), span);
     }
     void Insert(Span* pos, Span* newspan)
     {
