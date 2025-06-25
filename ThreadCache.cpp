@@ -19,7 +19,7 @@ void* ThreadCache::FetchFromCentralCache(size_t index, size_t size)
     //慢启动反馈调节
     //size越大，一次申请的数量越少
     //size越小，一次申请的数量越大
-    size_t batchNum = std::min(_freeList[index].MaxSize(), SizeClass::NumMoveSize(size));
+    size_t batchNum = min(_freeList[index].MaxSize(), SizeClass::NumMoveSize(size));
     if (batchNum == _freeList[index].MaxSize()) {
         _freeList[index].MaxSize()++;
     }

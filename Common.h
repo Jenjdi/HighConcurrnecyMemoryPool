@@ -17,7 +17,12 @@ typedef unsigned long long PAGE_ID;
 typedef size_t PAGE_ID;
 #else
 //Linux
-
+    #include<bits/wordsize.h>
+    #if __WORDSIZE==64
+        typedef unsigned long long PAGE_ID;
+    #elif __WORDSIZE==32
+        typedef size_t PAGE_ID;
+    #endif
 #endif
 
 #ifdef _WIN32
