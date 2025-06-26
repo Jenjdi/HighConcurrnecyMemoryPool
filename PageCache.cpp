@@ -25,6 +25,9 @@ Span* PageCache::NewSpan(size_t k)
             nSpan->_pageid += k;//span前面的k页被切分了，新的id需要加上k
             nSpan->_n -= k;
             _slist[nSpan->_n].PushFront(nSpan);
+            //存储nSpan的首尾页号和nSpan进行映射，因为nSpan只需要进行合并而不用切分，合并时只需要前面的尾和后面的头即可
+            _idSpanMap[nSpan->_pageid]=nSpan;//头
+            _idSpanMap[nSpan->_pageid + nSpan->_n - 1] = nSpan;//尾
             //建立pageid和span的映射，便于central cache回收，一个span可能对应多个页
             for (PAGE_ID i = 0; i < kSpan->_n;i++)
             {
@@ -62,5 +65,52 @@ Span* PageCache::MapObjectToSpan(void* obj)
 }
 void PageCache::ReleaseSpanToPageCache(Span* span)
 {
-
+    //向前合并
+    while (1)
+    {
+        PAGE_ID previd = span->_pageid-1;
+        auto ret = _idSpanMap.find(previd);
+        if (ret == _idSpanMap.end())//没有找到，说明这个页还没有被分配，不能进行管理
+        {
+            break;
+        }
+        Span* prevspan = ret->second;
+        if (prevspan->_inuse == true)
+        {
+            break;
+        }
+        if (prevspan->_n + span->_n > NPAGES - 1)
+        {
+            break;
+        }
+        span->_pageid = prevspan->_pageid;
+        span->_n += prevspan->_n;
+        _slist[prevspan->_n].Erase(prevspan);
+        delete prevspan;
+    }
+    //向后合并
+    while (1)
+    {
+        PAGE_ID nextid = span->_pageid + span->_n;//向后跳出当前span管理的页
+        auto ret = _idSpanMap.find(nextid);
+        if (ret == _idSpanMap.end()) // 没有找到，说明这个页还没有被分配，不能进行管理
+        {
+            break;
+        }
+        Span* nextspan = ret->second;
+        if (nextspan->_inuse == true) {
+            break;//正在被使用，不能进行合并
+        }
+        if (nextspan->_n + span->_n > NPAGES - 1) {
+            break;//超出span所能管理的上限
+        }
+        span->_n += nextspan->_n;
+        _slist[nextspan->_n].Erase(nextspan);
+        delete nextspan;
+    }
+    //合并完成，将span挂到pagecache的slist上
+    _slist[span->_n].PushFront(span);
+    span->_inuse = false;
+    _idSpanMap[span->_pageid] = span;
+    _idSpanMap[span->_pageid + span->_n - 1] = span;
 }

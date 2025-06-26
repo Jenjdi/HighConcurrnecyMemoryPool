@@ -52,10 +52,20 @@ void TestObjectPool()
 }
 void TestThread()
 {
-    for (int i = 0;i < 1024;i++)
-    {
-        void* ptr = ConcurrentAlloc(5*i);
-    }
+    void* p1 = ConcurrentAlloc(2);
+    void* p2 = ConcurrentAlloc(7);
+    void* p3 = ConcurrentAlloc(52);
+    void* p4 = ConcurrentAlloc(56);
+    void* p5 = ConcurrentAlloc(54);
+    void* p6 = ConcurrentAlloc(55);
+    void* p7 = ConcurrentAlloc(5);
+    ConcurrentFree(p1, 2);
+    ConcurrentFree(p2, 7);
+    ConcurrentFree(p3, 52);
+    ConcurrentFree(p4, 56);
+    ConcurrentFree(p5, 54);
+    ConcurrentFree(p6, 55);
+    ConcurrentFree(p7, 5);
 }
 int main()
 {

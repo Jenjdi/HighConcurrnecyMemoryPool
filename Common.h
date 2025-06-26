@@ -59,7 +59,7 @@ class FreeList
 private:
     void* _freeList = nullptr;
     size_t _MaxSize = 1;
-    size_t _size;
+    size_t _size=0;
 
 public:
     size_t Size()
@@ -252,6 +252,7 @@ struct Span
     Span* _next=nullptr;
     
     size_t _useCount=0;//切好的小块内存，被分配给thread cache的计数，当全部收回时就为0，同时默认也是0
+    bool _inuse = false;//是否在被使用
     void* _freeList=nullptr;//切好的小块内存的自由链表
 
     size_t _maxSize = 1;
