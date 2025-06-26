@@ -50,24 +50,40 @@ void TestObjectPool()
     cout << "new cost time:" << end1 - begin1 << endl;
     cout << "object pool cost time:" << end2 - begin2 << endl;
 }
-void TestThread()
+void TestThread2()
 {
-    void* p1 = ConcurrentAlloc(2);
-    void* p2 = ConcurrentAlloc(7);
-    void* p3 = ConcurrentAlloc(52);
-    void* p4 = ConcurrentAlloc(56);
-    void* p5 = ConcurrentAlloc(54);
-    void* p6 = ConcurrentAlloc(55);
-    void* p7 = ConcurrentAlloc(5);
-    ConcurrentFree(p1, 2);
-    ConcurrentFree(p2, 7);
-    ConcurrentFree(p3, 52);
-    ConcurrentFree(p4, 56);
-    ConcurrentFree(p5, 54);
-    ConcurrentFree(p6, 55);
-    ConcurrentFree(p7, 5);
+    vector<void*> v;
+    for (int i = 0;i < 1024;i++)
+    {
+        void* ptr=ConcurrentAlloc(5);
+        v.push_back(ptr);
+    }
+    for (auto e : v)
+    {
+        ConcurrentFree(e);
+    }
+}
+void TestThread1()
+{
+    vector<void*> v;
+    for (int i = 0; i < 1024; i++) {
+        void* ptr = ConcurrentAlloc(5);
+        v.push_back(ptr);
+    }
+    for (auto e : v) {
+        ConcurrentFree(e);
+    }
+    
+}
+void TestThread3()
+{
+    ConcurrentAlloc(1024000000);
+    ConcurrentAlloc(1024000000);
+    ConcurrentAlloc(1024000000);
+    ConcurrentAlloc(1024000000);
+    ConcurrentAlloc(1024000000);
 }
 int main()
 {
-    TestThread();
+    TestThread3();
 }

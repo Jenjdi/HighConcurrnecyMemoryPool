@@ -4,7 +4,18 @@ PageCache PageCache::_sInst;
 //获取一个k页的span
 Span* PageCache::NewSpan(size_t k)
 {
-    assert(k > 0 && k < NPAGES);
+    assert(k > 0);
+    if (k > NPAGES-1)
+    {
+        //大于128k直接找堆要
+        void* ptr = SystemAlloc(k);
+        //Span* span = new Span;
+        Span* span = _spanPool.New();
+        span->_pageid = (PAGE_ID)ptr >> PAGE_SHIFT;
+        span->_n = k;
+        _idSpanMap[span->_pageid] = span;//大于128页交给map映射
+        return span;
+    }
     //检查第k个桶中是否有span，如果有直接放回
     if (!_slist[k].Empty())
     {
@@ -18,7 +29,8 @@ Span* PageCache::NewSpan(size_t k)
             //找到可用的span，将其中的k个页切分，剩下的i-k个页放到第i-k位置的桶中
             Span* nSpan = _slist[i].PopFront();
             //先拿到这个span
-            Span* kSpan = new Span;
+            //Span* kSpan = new Span;
+            Span* kSpan = _spanPool.New();
             kSpan->_pageid = nSpan->_pageid;//将span前面的k个页切分下来，新的id=原来的id
             kSpan->_n = k;//拿到k个页
 
@@ -38,7 +50,8 @@ Span* PageCache::NewSpan(size_t k)
     }
     //走到这里说明已经没有大页span了
     //去堆上申请NPAGES-1页的span
-    Span* bigSpan = new Span;
+    //Span* bigSpan = new Span;
+    Span* bigSpan = _spanPool.New();
     void* ptr = SystemAlloc(NPAGES - 1);
     //获取页号
     bigSpan->_pageid = (PAGE_ID)ptr >> PAGE_SHIFT; // 相当于除以页的大小，得到页号
@@ -51,6 +64,7 @@ Span* PageCache::NewSpan(size_t k)
 Span* PageCache::MapObjectToSpan(void* obj)
 {
     PAGE_ID id = (PAGE_ID)obj >> PAGE_SHIFT;
+    std::unique_lock<std::mutex> lock(PageCache::GetInstance()->GetPageMutex());
     auto ret = _idSpanMap.find(id);
     if (ret != _idSpanMap.end())
     {
@@ -65,6 +79,15 @@ Span* PageCache::MapObjectToSpan(void* obj)
 }
 void PageCache::ReleaseSpanToPageCache(Span* span)
 {
+    //大于128页直接还给堆
+    if (span->_n > NPAGES)
+    {
+        void* ptr = (void*)(span->_pageid << PAGE_SHIFT);
+        SystemFree(ptr);
+        //delete span;
+        _spanPool.Delete(span);
+        return;
+    }
     //向前合并
     while (1)
     {
@@ -86,7 +109,8 @@ void PageCache::ReleaseSpanToPageCache(Span* span)
         span->_pageid = prevspan->_pageid;
         span->_n += prevspan->_n;
         _slist[prevspan->_n].Erase(prevspan);
-        delete prevspan;
+        //delete prevspan;
+        _spanPool.Delete(prevspan);
     }
     //向后合并
     while (1)
@@ -106,7 +130,8 @@ void PageCache::ReleaseSpanToPageCache(Span* span)
         }
         span->_n += nextspan->_n;
         _slist[nextspan->_n].Erase(nextspan);
-        delete nextspan;
+        //delete nextspan;
+        _spanPool.Delete(nextspan);
     }
     //合并完成，将span挂到pagecache的slist上
     _slist[span->_n].PushFront(span);

@@ -1,4 +1,5 @@
 #include "CentralCache.h"
+
 CentralCache CentralCache::_sInst;
 Span* CentralCache::GetOneSpan(SpanList& list, size_t byte_size)
 {
@@ -22,6 +23,7 @@ Span* CentralCache::GetOneSpan(SpanList& list, size_t byte_size)
     PageCache::GetInstance()->GetPageMutex().lock();//因为是获取pagecache的span，因此要对pagecache加锁
     Span* span=PageCache::GetInstance()->NewSpan(SizeClass::NumMovePage(byte_size));
     span->_inuse = true;
+    span->_objSize = byte_size;
     PageCache::GetInstance()->GetPageMutex().unlock();
 
     //下面这里不需要加锁，因为span暂时只有当前线程能够访问到，并没有放入到链表中，因此其他线程访问不到
