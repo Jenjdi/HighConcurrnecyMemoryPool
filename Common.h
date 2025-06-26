@@ -6,11 +6,12 @@
 #include<algorithm>
 #include<ctime>
 #include<cassert>
+#include<unordered_map>
 
 static const size_t MAX_BYTES = 256 * 1024; // thread_cache最大256KB
 static const size_t NFREELIST = 208;
 static const size_t NPAGES = 129;//实际上使用到的就是128个，为了让下标和页数一一对应，将0下标空出来
-static const size_t PAGE_SHIFT = 13;//页大小为2^13
+static const size_t PAGE_SHIFT = 13;//页大小为2^13=8KB
 #ifdef _WIN64
 typedef unsigned long long PAGE_ID;
 #elif _WIN32
@@ -35,12 +36,13 @@ inline static void* SystemAlloc(size_t kpage)
 {
 #ifdef _WIN32
 
-    void* ptr = VirtualAlloc(0, kpage * (1 << 12), MEM_COMMIT | MEM_RESERVE,
+    void* ptr = VirtualAlloc(0, kpage << PAGE_SHIFT, MEM_COMMIT | MEM_RESERVE,
         PAGE_READWRITE);
 #else
     // linux下brk mmap等
-    void* ptr = mmap(nullptr, kpage, PROT_READ | PROT_WRITE,
+    void* ptr = mmap(nullptr, kpage << PAGE_SHIFT, PROT_READ | PROT_WRITE,
         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
 
 #endif
     if (ptr == nullptr)
@@ -57,22 +59,43 @@ class FreeList
 private:
     void* _freeList = nullptr;
     size_t _MaxSize = 1;
+    size_t _size;
 
 public:
+    size_t Size()
+    {
+        return _size;
+    }
     void Push(void* obj)
     {
         NodeNext(obj) = _freeList;
         _freeList = obj;
+        ++_size;
     }
-    void PushRange(void* begin, void* end)
+    void PushRange(void* begin, void* end, size_t n)
     {
         NodeNext(end) = _freeList;
         _freeList = begin;
+        _size += n;
+    }
+    void PopRange(void*& begin, void*& end, size_t n)
+    {
+        assert(n < _size);
+        begin = _freeList;
+        end = begin;
+        for (int i = 0;i < n-1;i++)//end一开始就在第一个上面，因此实际上走n-1步
+        {
+            end = NodeNext(end);
+        }
+        _freeList = NodeNext(end);
+        NodeNext(end) = nullptr;
+        _size -= n;
     }
     void* Pop()
     {
         void* obj = _freeList;
         _freeList = NodeNext(obj);
+        --_size;
         return obj;
     }
     bool Empty()
@@ -106,9 +129,9 @@ private:
         return (((size) + alignNum - 1) & ~(alignNum - 1));
         // 将所以不足对齐数的值都补足到对齐数
     }
-    static inline size_t _Index(size_t bytes, size_t align_shift)
+    static inline size_t _Index(size_t bytes, size_t align_shift)//align_shift必须小于64
     {
-        return ((bytes + (1 << align_shift) - 1) >> align_shift) - 1;
+        return ((bytes + (1ULL << align_shift) - 1) >> align_shift) - 1;
     }
 
 public:
@@ -213,14 +236,15 @@ public:
         size_t npage = num * size;//num个对象，一个对象size个字节，算出总的字节数
         npage >>= PAGE_SHIFT;//一个页大小为2^PAGE_SHIFT字节，通过右移能更高效的算出具体所需要的页数
         if (npage == 0)
-            npage = 1;
+            npage = 1;//至少分配一个页
         return npage;
     }
 };
 
-    //管理多个连续页大块内存的跨度
+//管理多个连续页大块内存的跨度
 struct Span
 {
+    //页是最基本的分配单位，一个页8KB
     //内存大小 = _n * 页大小
     PAGE_ID _pageid=0;//大块内存的起始页号
     size_t _n=0;//页的数量
@@ -266,10 +290,12 @@ public:
         assert(pos);
         assert(newspan);
         Span* prev = pos->_prev;
+        // prev newspan pos
         prev->_next = newspan;
         newspan->_prev = prev;
-        pos->_prev=newspan;
         newspan->_next = pos;
+        pos->_prev = newspan;
+        
     }
     Span* PopFront()
     {

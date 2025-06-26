@@ -6,6 +6,7 @@ private:
     static PageCache _sInst;
     std::mutex _mutex;
     SpanList _slist[NPAGES];
+    std::unordered_map<PAGE_ID, Span*> _idSpanMap;
     PageCache() { }
     PageCache(const PageCache&) = delete;
     
@@ -20,4 +21,6 @@ public:
         return _mutex;
     }
     Span* NewSpan(size_t size);
+    Span* MapObjectToSpan(void* obj);
+    void ReleaseSpanToPageCache(Span* span);
 };

@@ -13,5 +13,7 @@ public:
 
     void* FetchFromCentralCache(size_t index, size_t size);
 
+    void ListTooLong(FreeList& list, size_t size);
+
 };
 static _declspec(thread) ThreadCache* pTLSThreadCache = nullptr;

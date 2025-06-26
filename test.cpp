@@ -1,5 +1,7 @@
 #include "ObjectPool.h"
+#include"ConcurrentAlloc.h"
 #include <vector>
+#include<iostream>
 using namespace std;
 struct TreeNode {
     int _val;
@@ -50,9 +52,12 @@ void TestObjectPool()
 }
 void TestThread()
 {
-
+    for (int i = 0;i < 1024;i++)
+    {
+        void* ptr = ConcurrentAlloc(5*i);
+    }
 }
 int main()
 {
-    TestObjectPool();
+    TestThread();
 }
