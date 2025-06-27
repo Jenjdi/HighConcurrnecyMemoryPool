@@ -120,6 +120,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <Profile>true</Profile>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -127,13 +128,14 @@
     <ClInclude Include="ConcurrentAlloc.h" />
     <ClInclude Include="ObjectPool.h" />
     <ClInclude Include="PageCache.h" />
+    <ClInclude Include="PageMap.h" />
     <ClInclude Include="ThreadCache.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="BenchMark.cpp" />
     <ClCompile Include="CentralCache.cpp" />
     <ClCompile Include="CentralCache.h" />
     <ClCompile Include="PageCache.cpp" />
-    <ClCompile Include="test.cpp" />
     <ClCompile Include="ThreadCache.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

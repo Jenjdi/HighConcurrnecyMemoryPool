@@ -1,7 +1,9 @@
 #include"PageCache.h"
+
 PageCache PageCache::_sInst;
 
 //获取一个k页的span
+
 Span* PageCache::NewSpan(size_t k)
 {
     assert(k > 0);
@@ -13,13 +15,24 @@ Span* PageCache::NewSpan(size_t k)
         Span* span = _spanPool.New();
         span->_pageid = (PAGE_ID)ptr >> PAGE_SHIFT;
         span->_n = k;
-        _idSpanMap[span->_pageid] = span;//大于128页交给map映射
+        //_idSpanMap[span->_pageid] = span;//大于128页交给map映射
+        _idSpanMap.Ensure(span->_pageid, 1);
+        _idSpanMap.set(span->_pageid, span);
         return span;
     }
     //检查第k个桶中是否有span，如果有直接放回
     if (!_slist[k].Empty())
     {
-        return _slist[k].PopFront();
+        Span* kSpan = _slist[k].PopFront();
+
+        // 建立id和span的映射，方便central cache回收小块内存时，查找对应的span
+        for (PAGE_ID i = 0; i < kSpan->_n; ++i) {
+            //_idSpanMap[kSpan->_pageid + i] = kSpan;
+            _idSpanMap.Ensure(kSpan->_pageid + i, 1);
+            _idSpanMap.set(kSpan->_pageid + i, kSpan);
+        }
+
+        return kSpan;
     }
     //第k个桶没有内存，依次遍历后面的桶，找到有span的
     for (size_t i = k + 1;i < NPAGES;i++)
@@ -38,12 +51,18 @@ Span* PageCache::NewSpan(size_t k)
             nSpan->_n -= k;
             _slist[nSpan->_n].PushFront(nSpan);
             //存储nSpan的首尾页号和nSpan进行映射，因为nSpan只需要进行合并而不用切分，合并时只需要前面的尾和后面的头即可
-            _idSpanMap[nSpan->_pageid]=nSpan;//头
-            _idSpanMap[nSpan->_pageid + nSpan->_n - 1] = nSpan;//尾
+            //_idSpanMap[nSpan->_pageid]=nSpan;//头
+            _idSpanMap.Ensure(nSpan->_pageid, 1);
+            _idSpanMap.set(nSpan->_pageid, nSpan);
+            //_idSpanMap[nSpan->_pageid + nSpan->_n - 1] = nSpan;//尾
+            _idSpanMap.Ensure(nSpan->_pageid + nSpan->_n - 1, 1);
+            _idSpanMap.set(nSpan->_pageid + nSpan->_n - 1, nSpan);
             //建立pageid和span的映射，便于central cache回收，一个span可能对应多个页
             for (PAGE_ID i = 0; i < kSpan->_n;i++)
             {
-                _idSpanMap[kSpan->_pageid + i] = kSpan;
+                //_idSpanMap[kSpan->_pageid + i] = kSpan;
+                _idSpanMap.Ensure(kSpan->_pageid + i, 1);
+                _idSpanMap.set(kSpan->_pageid + i, kSpan);
             }
             return kSpan;
         }
@@ -56,7 +75,6 @@ Span* PageCache::NewSpan(size_t k)
     //获取页号
     bigSpan->_pageid = (PAGE_ID)ptr >> PAGE_SHIFT; // 相当于除以页的大小，得到页号
     bigSpan->_n = NPAGES - 1;//申请的是NPAGES-1页的span
-
     _slist[bigSpan->_n].PushFront(bigSpan);
 
     return NewSpan(k);//复用整段逻辑，调用时因为已经有了span，因此一定不会走这里，所以会走上面
@@ -64,18 +82,24 @@ Span* PageCache::NewSpan(size_t k)
 Span* PageCache::MapObjectToSpan(void* obj)
 {
     PAGE_ID id = (PAGE_ID)obj >> PAGE_SHIFT;
-    std::unique_lock<std::mutex> lock(PageCache::GetInstance()->GetPageMutex());
-    auto ret = _idSpanMap.find(id);
-    if (ret != _idSpanMap.end())
-    {
-        return ret->second;
-    }
-    else
-    {
-        assert(false);//因为之前已经放到过map中了，因此一定能找到，若找不到说明出问题了
-        return nullptr;
-    }
-
+    //std::unique_lock<std::mutex> lock(PageCache::GetInstance()->GetPageMutex());
+    //auto ret = _idSpanMap.find(id);
+    //if (ret != _idSpanMap.end())
+    //{
+    //    return ret->second;
+    //}
+    //else
+    //{
+    //    assert(false);//因为之前已经放到过map中了，因此一定能找到，若找不到说明出问题了
+    //    return nullptr;
+    //}
+    //使用基数树可以不用加锁
+    //只有newSpan和释放回PageCache时才会建立id和span的映射
+    //基数树写入时不会改变结构，因为是在写之前就开辟好空间了
+    //读写是分离的，线程1对这个位置读写的时候，线程2不可能对这个位置进行读写
+    auto ret = (Span*)_idSpanMap.get(id);
+    assert(ret != nullptr);
+    return ret;
 }
 void PageCache::ReleaseSpanToPageCache(Span* span)
 {
@@ -92,12 +116,18 @@ void PageCache::ReleaseSpanToPageCache(Span* span)
     while (1)
     {
         PAGE_ID previd = span->_pageid-1;
-        auto ret = _idSpanMap.find(previd);
-        if (ret == _idSpanMap.end())//没有找到，说明这个页还没有被分配，不能进行管理
+        //auto ret = _idSpanMap.find(previd);
+        //if (ret == _idSpanMap.end())//没有找到，说明这个页还没有被分配，不能进行管理
+        //{
+        //    break;
+        //}        
+        //Span* prevspan = ret->second;
+        auto ret = (Span*)_idSpanMap.get(previd);
+        Span* prevspan = ret;
+        if (prevspan == nullptr)
         {
             break;
         }
-        Span* prevspan = ret->second;
         if (prevspan->_inuse == true)
         {
             break;
@@ -116,12 +146,18 @@ void PageCache::ReleaseSpanToPageCache(Span* span)
     while (1)
     {
         PAGE_ID nextid = span->_pageid + span->_n;//向后跳出当前span管理的页
-        auto ret = _idSpanMap.find(nextid);
-        if (ret == _idSpanMap.end()) // 没有找到，说明这个页还没有被分配，不能进行管理
+        //auto ret = _idSpanMap.find(nextid);
+        //if (ret == _idSpanMap.end()) // 没有找到，说明这个页还没有被分配，不能进行管理
+        //{
+        //    break;
+        //}
+        //Span* nextspan = ret->second;
+        auto ret = (Span*)_idSpanMap.get(nextid);
+        Span* nextspan = ret;
+        if (nextspan == nullptr)
         {
             break;
         }
-        Span* nextspan = ret->second;
         if (nextspan->_inuse == true) {
             break;//正在被使用，不能进行合并
         }
@@ -136,6 +172,10 @@ void PageCache::ReleaseSpanToPageCache(Span* span)
     //合并完成，将span挂到pagecache的slist上
     _slist[span->_n].PushFront(span);
     span->_inuse = false;
-    _idSpanMap[span->_pageid] = span;
-    _idSpanMap[span->_pageid + span->_n - 1] = span;
+    /*_idSpanMap[span->_pageid] = span;
+    _idSpanMap[span->_pageid + span->_n - 1] = span;*/
+    _idSpanMap.Ensure(span->_pageid, 1);
+    _idSpanMap.set(span->_pageid, span);
+    _idSpanMap.Ensure(span->_pageid + span->_n - 1, 1);
+    _idSpanMap.set(span->_pageid + span->_n - 1, span);
 }

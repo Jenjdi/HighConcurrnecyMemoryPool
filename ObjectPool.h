@@ -19,7 +19,7 @@ public:
             // 当剩余可分配的空间的大小比一个对象的大小小的时候，就重新分配空间
             if (_RemainByte < sizeof(T)) {
                 _RemainByte = 128 * 1024;
-                _memory = (char*)SystemAlloc(_RemainByte);
+                _memory = (char*)SystemAlloc((_RemainByte)>>PAGE_SHIFT);
                 if (_memory == nullptr) {
                     throw std::bad_alloc();
                 }

@@ -15,8 +15,10 @@ static const size_t NPAGES = 129; // 实际上使用到的就是128个，为了让下标和页数一
 static const size_t PAGE_SHIFT = 13; // 页大小为2^13=8KB
 #ifdef _WIN64
 typedef unsigned long long PAGE_ID;
+static const size_t SystemBits = 64;
 #elif _WIN32
 typedef size_t PAGE_ID;
+static const size_t SystemBits = 32;
 #else
 // Linux
 #include <bits/wordsize.h>
@@ -117,7 +119,7 @@ public:
 // 管理内存对其和映射
 
 class SizeClass {
-private:
+public:
     static inline size_t _RoundUP(size_t size, size_t alignNum)
     {
         // 返回为了满足对齐规则而实际分配的内存值
@@ -298,3 +300,5 @@ public:
         next->_prev = prev;
     }
 };
+#include"ObjectPool.h"
+#include"PageMap.h"

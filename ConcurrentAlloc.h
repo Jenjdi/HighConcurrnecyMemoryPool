@@ -1,6 +1,6 @@
 #pragma once
 #include"ThreadCache.h"
-#include"ObjectPool.h"
+
 static void* ConcurrentAlloc(size_t size)
 {
     if (size > MAX_BYTES)
@@ -23,8 +23,6 @@ static void* ConcurrentAlloc(size_t size)
         }
         return pTLSThreadCache->Allocate(size);
     }
-    
-    
 }
 static void ConcurrentFree(void* ptr)
 {
@@ -43,5 +41,4 @@ static void ConcurrentFree(void* ptr)
         assert(pTLSThreadCache);
         pTLSThreadCache->Deallocate(ptr, size);
     }
-    
 }
